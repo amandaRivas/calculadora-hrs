@@ -77,7 +77,7 @@ with st.form("registro_form", clear_on_submit=False): # Cambiado a False para qu
         dia_str = st.text_input("Día (DD)", value="", placeholder="ej: 04", help="Solo escribe los 2 dígitos del día")
         entrada_str = st.text_input("Hora de Entrada", value="06:00")
     with col2:
-        empleado = st.text_input("Nombre del Empleado", value="Francisco Lopez")
+        empleado = st.text_input("Nombre del Empleado", value="")
         salida_str = st.text_input("Hora de Salida", value="", placeholder="ej: 19:33")
     
     boton_agregar = st.form_submit_button("Calcular y Agregar al Total")
