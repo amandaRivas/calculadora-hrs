@@ -67,27 +67,33 @@ st.markdown("Cálculo basado en jornada de **9h** (8:00 - 17:00). Fines de seman
 if 'historial' not in st.session_state:
     st.session_state.historial = []
 
-with st.form("registro_form", clear_on_submit=True):
+# setar el mes anterior al que estamos
+mes_defecto = st.text_input("📅 Mes y Año a calcular (MM/AAAA)", value="05/2026", help="Cambia esto si vas a calcular otro mes")
+
+with st.form("registro_form", clear_on_submit=False): # Cambiado a False para que no te borre el día de golpe si no quieres
     col1, col2 = st.columns(2)
     with col1:
-        fecha = st.date_input("Selecciona la Fecha")
-        # AHORA ES TEXTO: Entrada por defecto 06:00
-        entrada_str = st.text_input("Hora de Entrada", value="06:00", help="Formato 24h (ej: 06:00)")
+        # Ahora solo te pide el número del día (ej: 04)
+        dia_str = st.text_input("Día (DD)", value="", placeholder="ej: 04", help="Solo escribe los 2 dígitos del día")
+        entrada_str = st.text_input("Hora de Entrada", value="06:00")
     with col2:
         empleado = st.text_input("Nombre del Empleado", value="Francisco Lopez")
-        # AHORA ES TEXTO: Salida vacía por defecto para que tú la escribas libremente
-        salida_str = st.text_input("Hora de Salida", value="", placeholder="ej: 19:33", help="Formato 24h (ej: 19:33)")
+        salida_str = st.text_input("Hora de Salida", value="", placeholder="ej: 19:33")
     
     boton_agregar = st.form_submit_button("Calcular y Agregar al Total")
 
 if boton_agregar:
-    # Validar que los textos tengan el formato correcto de hora antes de calcular
     try:
+        # Armamos la fecha completa juntando el día con el mes de arriba
+        fecha_completa_str = f"{dia_str.strip()}/{mes_defecto.strip()}"
+        
+        # Validaciones de formatos
+        fecha_dt = datetime.strptime(fecha_completa_str, "%d/%m/%Y")
         entrada_t = datetime.strptime(entrada_str.strip(), "%H:%M").time()
         salida_t = datetime.strptime(salida_str.strip(), "%H:%M").time()
         
-        entrada_dt = datetime.combine(fecha, entrada_t)
-        salida_dt = datetime.combine(fecha, salida_t)
+        entrada_dt = datetime.combine(fecha_dt, entrada_t)
+        salida_dt = datetime.combine(fecha_dt, salida_t)
         
         if salida_dt < entrada_dt:
             salida_dt += timedelta(days=1)
@@ -96,51 +102,82 @@ if boton_agregar:
         
         st.session_state.historial.append({
             "Empleado": empleado,
-            "Fecha": fecha.strftime("%d/%m/%Y"),
-            "Día": "FDS" if fecha.weekday() >= 5 else "Semana",
+            "Fecha": fecha_dt.strftime("%d/%m/%Y"),
+            "Día": "FDS" if fecha_dt.weekday() >= 5 else "",
             "Entrada": entrada_t.strftime("%H:%M"),
             "Salida": salida_t.strftime("%H:%M"),
             "Extra (H.MM)": resultado
         })
     except ValueError:
-        st.error("❌ Error: Asegúrate de escribir las horas en formato HH:MM (ejemplo: 06:00 o 19:33)")
+        st.error("❌ Error: Revisa los datos. El día debe ser DD (ej: 04) y las horas HH:MM (ej: 19:33)")
 
-# --- 3. MOSTRAR RESULTADOS (EDICIÓN ACTIVA) ---
-
+# --- 3. MOSTRAR RESULTADOS (EDICIÓN, TOTAL ABAJO Y DESCARGA) ---
 if st.session_state.historial:
     st.markdown("💡 *Tip: Puedes hacer doble clic en cualquier celda para corregirla, o seleccionar una fila y presionar 'Supr' (Delete) para borrarla.*")
     
-    # Convertimos el historial a DataFrame
+    # Convertimos el historial a DataFrame y ajustamos el índice para que empiece en 1
     df = pd.DataFrame(st.session_state.historial)
-    
-    # SOLUCIÓN 1: Hacer que el índice empiece en 1 en lugar de 0
     df.index = df.index + 1
     
-    # SOLUCIÓN 2: Usar el editor de datos interactivo de Streamlit
-    # Bloqueamos la edición de columnas calculadas automáticamente para evitar errores
+    # Editor de datos interactivo
     df_editado = st.data_editor(
         df, 
         use_container_width=True,
-        num_rows="dynamic", # Permite borrar filas
-        disabled=["Día", "Extra (H.MM)"] # No dejamos editar estos porque dependen de la entrada/salida
+        num_rows="dynamic",
+        disabled=["Día", "Extra (H.MM)"]
     )
     
-    # Si el usuario modificó algo en la tabla, actualizamos los cálculos automáticamente
+    # Si el usuario modificó algo en la tabla, actualizamos los cálculos
     if not df_editado.equals(df):
-        # Volver a calcular las horas extras basándose en lo que el usuario editó en Entrada o Salida
         df_editado["Extra (H.MM)"] = df_editado.apply(recalcular_fila_editada, axis=1)
-        # Sincronizar con el historial de la sesión (restando 1 al índice para guardarlo bien internamente)
         df_interno = df_editado.copy()
         df_interno.index = df_interno.index - 1
         st.session_state.historial = df_interno.to_dict(orient="records")
         st.rerun()
 
-    # Calcular Total General
+    # toal acumulado
     total_minutos = sum(df_editado["Extra (H.MM)"].apply(h_mm_a_minutos))
     total_final = minutos_a_h_mm(total_minutos)
 
     st.metric(label="TOTAL ACUMULADO (Horas.Minutos)", value=f"{total_final:.2f}")
+    st.markdown("---") # Línea divisoria
 
-    if st.button("Limpiar Todo el Historial"):
+    # preparar excel con el acumulado total
+    import io
+    buffer = io.BytesIO()
+    
+    # Creamos una copia de la tabla para el Excel sin alterar la que ves en pantalla
+    df_excel = df_editado.copy()
+    
+    # Creamos la fila del total con la misma estructura
+    fila_total = {
+        "Empleado": "TOTAL GENERAL",
+        "Fecha": "",
+        "Día": "",
+        "Entrada": "",
+        "Salida": "",
+        "Extra (H.MM)": total_final
+    }
+    
+    # Añadimos la fila del total al final de la tabla de Excel
+    df_excel = pd.concat([df_excel, pd.DataFrame([fila_total])], ignore_index=True)
+    
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        # index=False para que no guarde la columna de números de fila en el Excel
+        df_excel.to_excel(writer, sheet_name='Horas Extras', index=False)
+    
+    # --- 🟢 UN SOLO BOTÓN DE DESCARGA (EXCEL) ---
+    st.download_button(
+        label="📥 Descargar Reporte en Excel",
+        data=buffer.getvalue(),
+        file_name=f"Reporte_Horas_{df_editado['Empleado'].iloc[0].replace(' ', '_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
+    
+    st.markdown(" ") # Espacio estético
+    
+    # Botón para limpiar todo
+    if st.button("Limpiar Todo el Historial", use_container_width=True):
         st.session_state.historial = []
         st.rerun()
