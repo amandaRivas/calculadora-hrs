@@ -60,7 +60,6 @@ def recalcular_fila_editada(row):
         return row["Extra (H.MM)"] # Si hay error de formato al escribir, deja el valor que estaba
 
 # --- 2. INTERFAZ WEB CON STREAMLIT ---
-
 st.set_page_config(page_title="Calculadora Horas Extras", page_icon="⏱️")
 st.title("⏱️ Calculadora de Horas Extras")
 st.markdown("Cálculo basado en jornada de **9h** (8:00 - 17:00). Fines de semana al **100% extra**.")
@@ -72,30 +71,39 @@ with st.form("registro_form", clear_on_submit=True):
     col1, col2 = st.columns(2)
     with col1:
         fecha = st.date_input("Selecciona la Fecha")
-        entrada = st.time_input("Hora de Entrada", value=datetime.strptime("06:00", "%H:%M").time())
+        # AHORA ES TEXTO: Entrada por defecto 06:00
+        entrada_str = st.text_input("Hora de Entrada", value="06:00", help="Formato 24h (ej: 06:00)")
     with col2:
-        empleado = st.text_input("Nombre del Empleado", value="Francisco Lopez Cruz")
-        salida = st.time_input("Hora de Salida", value=datetime.strptime("", "%H:%M").time())
+        empleado = st.text_input("Nombre del Empleado", value="Francisco Lopez")
+        # AHORA ES TEXTO: Salida vacía por defecto para que tú la escribas libremente
+        salida_str = st.text_input("Hora de Salida", value="", placeholder="ej: 19:33", help="Formato 24h (ej: 19:33)")
     
     boton_agregar = st.form_submit_button("Calcular y Agregar al Total")
 
 if boton_agregar:
-    entrada_dt = datetime.combine(fecha, entrada)
-    salida_dt = datetime.combine(fecha, salida)
-    
-    if salida_dt < entrada_dt:
-        salida_dt += timedelta(days=1)
+    # Validar que los textos tengan el formato correcto de hora antes de calcular
+    try:
+        entrada_t = datetime.strptime(entrada_str.strip(), "%H:%M").time()
+        salida_t = datetime.strptime(salida_str.strip(), "%H:%M").time()
         
-    resultado = calcular_horas_extras_formato_fijo(entrada_dt, salida_dt)
-    
-    st.session_state.historial.append({
-        "Empleado": empleado,
-        "Fecha": fecha.strftime("%d/%m/%Y"),
-        "Día": "FDS" if fecha.weekday() >= 5 else "Semana",
-        "Entrada": entrada.strftime("%H:%M"),
-        "Salida": salida.strftime("%H:%M"),
-        "Extra (H.MM)": resultado
-    })
+        entrada_dt = datetime.combine(fecha, entrada_t)
+        salida_dt = datetime.combine(fecha, salida_t)
+        
+        if salida_dt < entrada_dt:
+            salida_dt += timedelta(days=1)
+            
+        resultado = calcular_horas_extras_formato_fijo(entrada_dt, salida_dt)
+        
+        st.session_state.historial.append({
+            "Empleado": empleado,
+            "Fecha": fecha.strftime("%d/%m/%Y"),
+            "Día": "FDS" if fecha.weekday() >= 5 else "Semana",
+            "Entrada": entrada_t.strftime("%H:%M"),
+            "Salida": salida_t.strftime("%H:%M"),
+            "Extra (H.MM)": resultado
+        })
+    except ValueError:
+        st.error("❌ Error: Asegúrate de escribir las horas en formato HH:MM (ejemplo: 06:00 o 19:33)")
 
 # --- 3. MOSTRAR RESULTADOS (EDICIÓN ACTIVA) ---
 
